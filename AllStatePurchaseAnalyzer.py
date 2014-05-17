@@ -79,6 +79,8 @@ class Analyzer():
 
     NB_CV_SUBSETS = 10
 
+    ANALYSIS = True
+
     # Tuning parameters
     MAX_DEPTH = 1  # NOT USED NOW - Based on min_samples_leaf
     NB_TREES = 30
@@ -750,13 +752,11 @@ class Analyzer():
     # Full implementation of a simple Random Forests, run on separate options (A, B, C, D, E, F, G)
     def model_rf_separate_options(self):
 
-        analysis = False
-
         timer_start_features = datetime.datetime.now()
         ids, features, last_quote_answers, real_answers = self.rf_pre_process(self.data_train_truncated)
         self.logger.info('Features done in {}'.format(datetime.datetime.now() - timer_start_features))
 
-        if analysis:
+        if self.ANALYSIS:
         # Analysing and tuning
             total_improvement = 0 # This work only if predicting on one attribute only !
             for i in range(0, self.NB_CV_SUBSETS):
