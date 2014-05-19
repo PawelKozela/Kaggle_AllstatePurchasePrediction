@@ -2,10 +2,12 @@ __author__ = 'Pawel'
 
 import math
 import csv
+import random
 import numpy as np
 import datetime
 import logging
 from sklearn.ensemble import RandomForestClassifier
+from sklearn import tree
 
 LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
 
@@ -75,18 +77,33 @@ class Analyzer():
     data_test = {}
     answers = {}
 
+    location_customers_count = {}
+    location_average_A = {}
+    location_average_B = {}
+    location_average_C = {}
+    location_average_D = {}
+    location_average_E = {}
+    location_average_F = {}
+    location_average_G = {}
+    location_average_C_previous = {}
+    location_average_price = {}
+    location_G_count = {}
+
     NB_FEATURES = 7
 
-    NB_CV_SUBSETS = 10
+    NB_CV_SUBSETS = 5
 
     ANALYSIS = True
 
     # Tuning parameters
-    MAX_DEPTH = 1  # NOT USED NOW - Based on min_samples_leaf
-    NB_TREES = 30
-    MIN_SAMPLES_LEAF = 100
-    MAX_FEATURES = 20  # NOT USED NOW - All features are used
+    MAX_DEPTH = 5000
+    NB_TREES = 100
+    MIN_SAMPLES_LEAF = 10
+    MAX_FEATURES = 7
     NB_JOBS = 3
+    NB_RUNS = 1
+    CRITERION = 'gini'
+    TESTING_OPTION = 6
 
     def __init__(self, headers, data_train, data_train_truncated, data_test, answers):
         self.headers = headers
@@ -95,464 +112,52 @@ class Analyzer():
         self.data_train_truncated = data_train_truncated
         self.answers = answers
 
-    def get_stat_position_bough_quote(self):
-
-        counts = {}
-
-        for i, key in enumerate(self.data_train):
-
-            first_seen = 0
-            last_seen = 0
-
-            for j in range(0, len(self.data_train[key])):
-                if self.data_train[key][j][self.headers['A']:self.headers['G']+1] == self.answers[key]:
-                    if first_seen < 1:
-                        first_seen = j+1
-                    last_seen = j+1
-
-            if (first_seen, last_seen, len(self.data_train[key])) not in counts:
-                counts[(first_seen, last_seen, len(self.data_train[key]))] = 0
-
-            counts[(first_seen, last_seen, len(self.data_train[key]))] += 1
-
-        with open('bought_quotes_positions.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['first_seen', 'last_seen', 'length', 'count'])
-            for i, key in enumerate(counts):
-                    csv_writer.writerow([key[0], key[1], key[2], counts[key]])
-
-    def get_starting_quote_with_length(self):
-
-        counts = {}
-
-        for i, key in enumerate(self.data_train):
-            plan = "".join(tuple(self.data_train[key][0][self.headers['A']:self.headers['G']+1]))
-
-            if plan not in counts:
-                counts[plan] = {}
-
-            if 0 not in counts[plan]:
-                counts[plan][0] = 0
-
-            if len(self.data_train[key]) not in counts[plan]:
-                counts[plan][len(self.data_train[key])] = 0
-
-            counts[plan][0] += 1
-
-            counts[plan][len(self.data_train[key])] += 1
-
-        with open('starting_quotes.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['plan', 'length', 'count'])
-            for i, plan in enumerate(counts):
-                for j, length in enumerate(counts[plan]):
-                    csv_writer.writerow([plan, length, counts[plan][length]])
-
-    # Gives the number of attribute changes between the second quote and the bought one vs the number of changes between the first and second quote
-    def miss_by_changes_in_first_two_quotes(self):
-
-        nb_miss_and_changes = np.zeros(shape=(8, 8, 15), dtype=int)
-
-        for i, key in enumerate(self.data_train):
-            real_answer = self.answers[key]
-            my_answer = self.data_train[key][1][self.headers['A']:self.headers['G']+1]
-            first_quote = self.data_train[key][0][self.headers['A']:self.headers['G']+1]
-            second_quote = self.data_train[key][1][self.headers['A']:self.headers['G']+1]
-
-            nb_moved = 0
-            nb_changed = 0
-            for j in range(0, 7):
-                if first_quote[j] != second_quote[j]:
-                    nb_moved += 1
-
-                if real_answer[j] != my_answer[j]:
-                    nb_changed += 1
-            nb_miss_and_changes[nb_changed, nb_moved, len(self.data_train[key])] += 1
-
-        for i in range(0, 8):
-            for j in range(0, 8):
-                for k in range(0, 15):
-                    print i, j, k,  nb_miss_and_changes[i, j, k]
-
-    # Gives the number of attribute changes between the second quote and the bought one vs the number of changes between the first and second quote
-    def miss_by_option(self):
-
-        nb_miss_by_option = np.zeros(shape=(8, 7), dtype=int)
-
-        vals = np.zeros(shape=(5, 5))
-
-        for i, key in enumerate(self.data_train_truncated):
-            real_answer = self.answers[key]
-            last_quote = self.data_train_truncated[key][-1][self.headers['A']:self.headers['G']+1]
-
-            nb_changed = 0
-            for j in range(0, 7):
-                if real_answer[j] != last_quote[j]:
-                    nb_changed += 1
-
-            for j in range(0, 7):
-                if real_answer[j] != last_quote[j]:
-                    if nb_changed == 1 and j == 6:
-                        vals[real_answer[j], last_quote[j]] += 1
-                    nb_miss_by_option[nb_changed, j] += 1
-
-        for i in range(1, 5):
-            for j in range(1, 5):
-                print i, j, vals[i, j]
-
-        for i in range(1, 8):
-            for j in range(0, 7):
-                print i, LETTERS[j], nb_miss_by_option[i, j]
-
-    # Gives the prediction accuracy of quote number x vs the total number of quotes n (ex. 40% of accuracy of quote 3 if 10 in total, 45% of quote 4 if 10 in total etc)
-    def simple_stat_prediction_accuracy_by_shopping_point(self):
-        good = {}
-        cnt = {}
-        for i, key in enumerate(self.data_train):
-            purchase_len = len(self.data_train[key])
-            real_answer = self.answers[key]
-            for j in range(0, len(self.data_train[key])):
-                my_answer = self.data_train[key][j][self.headers['A']:self.headers['G']+1]
-                if (purchase_len, j) not in cnt:
-                    good[(purchase_len, j)] = 0
-                    cnt[(purchase_len, j)] = 0
-
-                cnt[(purchase_len, j)] += 1
-                if my_answer == real_answer:
-                    good[(purchase_len, j)] += 1
-
-        for i, key in enumerate(good):
-            print key[0], key[1], cnt[key], good[key] / float(cnt[key])
-
-    # Gives the map : bought / first / second quote option, by attribute
-    def attribute_combinations(self):
-
-        data = np.zeros(shape=(7, 6, 6, 6))
-        for i, key in enumerate(self.data_train):
-            real_answer = self.answers[key]
-            first_quote = self.data_train[key][0][self.headers['A']:self.headers['G']+1]
-            second_quote = self.data_train[key][1][self.headers['A']:self.headers['G']+1]
-
-            for j in range(0, 7):
-                data[j][int(real_answer[j])][int(first_quote[j])][int(second_quote[j])] += 1
-
-        for i in range(0, 7):
-            for j in range(0, 5):
-                for k in range(0, 5):
-                    for l in range(0, 5):
-                        if data[i][j][k][l] > 0:
-                            print ['A', 'B', 'C', 'D', 'E', 'F', 'G'][i], j, k, l, data[i][j][k][l]
-
-    def get_next_quote(self, data):
-
-        transitions = {}
-
-        # To add the shopping_point_number
-        for i, key in enumerate(data):
-
-            for j in range(0, len(data[key])):
-                current_plan = "".join(tuple(data[key][j][self.headers['A']:self.headers['G']+1]))
-                if j < len(data[key]) - 1:
-                    next_plan = "".join(tuple(data[key][j+1][self.headers['A']:self.headers['G']+1]))
-                else:
-                    next_plan = "".join(self.answers[key])
-
-                if current_plan not in transitions:
-                    transitions[current_plan] = {}
-
-                if next_plan not in transitions[current_plan]:
-                    transitions[current_plan][next_plan] = 0
-
-                transitions[current_plan][next_plan] += 1
-
-        with open('transitions.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['Plan', 'Next_Plan', 'Count'])
-            for i, plan in enumerate(transitions):
-                for j, next_plan in enumerate(transitions[plan]):
-                    csv_writer.writerow([plan, next_plan, transitions[plan][next_plan]])
-
-        return transitions
-
-    def get_next_quote_with_level(self, data):
-
-        transitions = {}
-
-        # To add the shopping_point_number
-        for i, key in enumerate(data):
-
-            for j in range(0, len(data[key])):
-                current_plan = "".join(tuple(data[key][j][self.headers['A']:self.headers['G']+1]))
-                if j < len(data[key]) - 1:
-                    next_plan = "".join(tuple(data[key][j+1][self.headers['A']:self.headers['G']+1]))
-                else:
-                    next_plan = "".join(self.answers[key])
-
-                if j not in transitions:
-                    transitions[j] = {}
-
-                if current_plan not in transitions[j]:
-                    transitions[j][current_plan] = {}
-
-                if next_plan not in transitions[j][current_plan]:
-                    transitions[j][current_plan][next_plan] = 0
-
-                transitions[j][current_plan][next_plan] += 1
-
-        with open('transitions.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['Plan', 'Next_Plan', 'Count'])
-            for k, kj in enumerate(transitions):
-                for i, plan in enumerate(transitions[kj]):
-                    for j, next_plan in enumerate(transitions[kj][plan]):
-                        csv_writer.writerow([kj, plan, next_plan, transitions[kj][plan][next_plan]])
-
-        return transitions
-
-    def predict(self, data, transitions):
-
-        res = []
-        res_dict = {}
-
-        found = 0
-        not_found = 0
-        for i, key in enumerate(data):
-            current_plan = "".join(tuple(data[key][-1][self.headers['A']:self.headers['G']+1]))
-
-            if current_plan in transitions:
-                found += 1
-
-                # Found the one with most count
-                best = 0
-                best_plan = ""
-                for j, next_plan in enumerate(transitions[current_plan]):
-                    if transitions[current_plan][next_plan] > best:
-                        best = transitions[current_plan][next_plan]
-                        best_plan = next_plan
-
-                ret = best_plan
-
-            else:
-                not_found += 1
-                ret = current_plan
-
-            res.append((key, ret))
-            res_dict[key] = ret
-
-        print len(res), found, not_found
-
-        with open('next_quote_answers.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['Customer_ID', 'plan'])
-            for line_to_write in res:
-                csv_writer.writerow([line_to_write[0], line_to_write[1]])
-
-        return res_dict
-
-    def predict_with_level(self, data, transitions):
-
-        res = []
-        res_dict = {}
-
-        found = 0
-        not_found = 0
-        for i, key in enumerate(data):
-            current_plan = "".join(tuple(data[key][-1][self.headers['A']:self.headers['G']+1]))
-
-            if len(data[key])-1 in transitions and current_plan in transitions[len(data[key])-1]:
-                found += 1
-
-                # Found the one with most count
-                best = 0
-                best_plan = ""
-                for j, next_plan in enumerate(transitions[len(data[key])-1][current_plan]):
-                    if transitions[len(data[key])-1][current_plan][next_plan] > best:
-                        best = transitions[len(data[key])-1][current_plan][next_plan]
-                        best_plan = next_plan
-
-                ret = best_plan
-
-            else:
-                not_found += 1
-                ret = current_plan
-
-            res.append((key, ret))
-            res_dict[key] = ret
-
-        print len(res), found, not_found
-
-        with open('next_quote_answers.csv', 'wb') as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['Customer_ID', 'plan'])
-            for line_to_write in res:
-                csv_writer.writerow([line_to_write[0], line_to_write[1]])
-
-        return res_dict
-
-    def simple_price_analysis(self, data):
-
-        diffs = {}
-
-        letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
-
-        for k in range(0, 7):
-            for i, key in enumerate(data):
-
-                for j in range(0, len(data[key])-1):
-                    #if k == 1:
-                    #    print data[key][j][self.headers['A']:self.headers['G']+1]
-
-                    current_plan = ''.join(data[key][j][self.headers['A']:self.headers['A']+k] + data[key][j][self.headers['A']+k+1:self.headers['G']+1])
-                    #if k == 1:
-                    #    print k, current_plan
-
-                    next_plan = ''.join(data[key][j+1][self.headers['A']:self.headers['A']+k] + data[key][j+1][self.headers['A']+k+1:self.headers['G']+1])
-
-                    if data[key][j][self.headers['A']+k] != data[key][j+1][self.headers['A']+k] and current_plan == next_plan:
-                        price_change = int(data[key][j+1][self.headers['cost']]) - int(data[key][j][self.headers['cost']])
-                        tuple_key = (letters[k], data[key][j][self.headers['A']+k], data[key][j+1][self.headers['A']+k])
-                        if tuple_key not in diffs:
-                            diffs[tuple_key] = []
-
-                        diffs[tuple_key].append(price_change)
-
-            #sns.set(style="white", palette="muted")
-            #f, axes = plt.subplots(3, 2, figsize=(7, 7), sharex=True)
-            #colors = sns.color_palette("muted", 6)
-
-        #for i, key in enumerate(diffs):
-        #    print key, sum(diffs[key]) / float(len(diffs[key]))
-        #    axes[int(i / 2), int(i % 2)].set_title(key)
-        #    sns.distplot(diffs[key], color=colors[i], ax=axes[int(i / 2), int(i % 2)], bins=20)
-        #
-        #    plt.show()
-
-            with open('simple_price_change.csv', 'wb') as csvfile:
-                csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csv_writer.writerow(['Attribute', 'Current', 'Next', 'Price_change'])
-                for i, key in enumerate(diffs):
-                    csv_writer.writerow([key[0], key[1], key[2], sum(diffs[key]) / float(len(diffs[key]))])
-
-    def bsf(self, data_truncated_train, data_truncated_test):
-        res_dict = {}
-
-        found = 0
-        not_found = 0
-
-        # Move to pandas
-
-        to_analyse = []
-
-        for i, key in enumerate(data_truncated_test):
-
-            if i % 1000 == 0:
-                print i
-
-            if len(data_truncated_test[key]) > 2:
-                res_dict[key] = ''.join(data_truncated_test[key][-1][self.headers['A']:self.headers['G']+1])
-            else:
-                votes = {}
-                votes.clear()
-                # Try to find something the same first two in the training set, and get their prediction
-
-                for j, key2 in enumerate(data_truncated_train):
-                    if data_truncated_test[key][0][self.headers['A']:self.headers['G']+1] == data_truncated_train[key2][0][self.headers['A']:self.headers['G']+1] and data_truncated_test[key][1][self.headers['A']:self.headers['G']+1] == data_truncated_train[key2][1][self.headers['A']:self.headers['G']+1]:
-                        if len(data_truncated_train[key2]) > 2:
-                            output = ''.join(data_truncated_train[key2][2][self.headers['A']:self.headers['G']+1])
-                        else:
-                            output = ''.join(self.answers[key2])
-
-                        if output not in votes:
-                            votes[output] = 0
-
-                        votes[output] += 1
-
-                # Didn't find shit
-                if len(votes) == 0:
-                    not_found += 1
-                    res_dict[key] = ''.join(data_truncated_test[key][-1][self.headers['A']:self.headers['G']+1])
-                else:
-
-                    # Get the best vote
-                    best_vote = ""
-                    best_count = 0
-                    total_count = 0
-
-                    for j, key2 in enumerate(votes):
-                        total_count += votes[key2]
-                        if votes[key2] > best_count * 0.9:
-                            best_vote, best_count = key2, votes[key2]
-
-                    is_good = False
-                    #if best_vote == ''.join(self.answers[key]):
-                    #    is_good = True
-
-                    is_same_as_last = False
-                    if best_vote == ''.join(data_truncated_test[key][-1][self.headers['A']:self.headers['G']+1]):
-                        is_same_as_last = True
-
-                    is_last_good = False
-                    #if ''.join(self.answers[key]) == ''.join(data_truncated_test[key][-1][self.headers['A']:self.headers['G']+1]):
-                    #    is_last_good = True
-
-                    to_analyse.append([best_count, total_count, math.floor(total_count / 20), float(best_count) / float(total_count), math.floor(10 * float(best_count) / float(total_count)), is_good, is_same_as_last, is_last_good])
-
-                    if best_count > 0.5 * total_count and best_count >= 50:
-                        found += 1
-                        res_dict[key] = best_vote
-                    else:
-                        not_found += 1
-                        res_dict[key] = ''.join(data_truncated_test[key][-1][self.headers['A']:self.headers['G']+1])
-                    #res_dict[key] = ''.join(self.answers[key])
-
-        with open('simple_bfs.csv', 'wb') as csvfile:
-                csv_writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csv_writer.writerow(['Best_count', 'Total_count', 'Total_count_range', 'Pct', 'Pct_range', 'is_good', 'is_same_as_last', 'is_last_good'])
-                for to_write in to_analyse:
-                    csv_writer.writerow(to_write)
-
-        print "BFS", found, not_found
-
-        return res_dict
-
-    def get_length_distribution(self):
-        test_lengths = np.zeros((15,))
-        train_lengths = np.zeros((15,))
-        truncated_train_lengths = np.zeros((15,))
-        for i, key in enumerate(self.data_test):
-            test_lengths[len(self.data_test[key])] += 1
-
-        for i, key in enumerate(self.data_train):
-            train_lengths[len(self.data_train[key])] += 1
-
-        for i, key in enumerate(self.data_train_truncated):
-            truncated_train_lengths[len(self.data_train_truncated[key])] += 1
-
-        for i in range(0, 15):
-            print i, test_lengths[i], train_lengths[i], truncated_train_lengths[i]
-
-    def plan_combinations(self):
-
-        data = {}
-        for i, key in enumerate(self.data_train):
-            real_answer = "".join(self.answers[key])
-            second_quote = "".join(tuple(self.data_train[key][-1][self.headers['A']:self.headers['G']+1]))
-
-            if real_answer not in data:
-                data[real_answer] = {}
-
-            if second_quote not in data[real_answer]:
-                data[real_answer][second_quote] = 0
-
-            data[real_answer][second_quote] += 1
-
-        for i, key in enumerate(data):
-            for j, second_key in enumerate(data[key]):
-                print key, second_key, data[key][second_key]
-
-#  --------------------------------------------------- Random Forests ---------------------------------------------------
-
     # -------------------------------------------------------- Random Forests --------------------------------------------------------
+
+    def prepare_location_stats(self, to_train_ids):
+        self.location_customers_count.clear()
+        self.location_average_A.clear()
+        self.location_average_B.clear()
+        self.location_average_C.clear()
+        self.location_average_D.clear()
+        self.location_average_E.clear()
+        self.location_average_F.clear()
+        self.location_average_G.clear()
+        self.location_average_C_previous.clear()
+        self.location_average_price.clear()
+
+        self.location_G_count.clear()
+
+        can_use = {}
+
+        for i, key in enumerate(self.data_train_truncated):
+            loc = self.data_train_truncated[key][0][self.headers['location']]
+            if loc not in self.location_customers_count:
+                self.location_customers_count[loc] = 0
+                self.location_average_A[loc] = 0
+                self.location_average_B[loc] = 0
+                self.location_average_C[loc] = 0
+                self.location_average_D[loc] = 0
+                self.location_average_E[loc] = 0
+                self.location_average_F[loc] = 0
+                self.location_average_G[loc] = 0
+                self.location_average_C_previous[loc] = 0
+                self.location_average_price[loc] = 0
+                self.location_G_count[loc] = np.zeros(shape=(5,))
+
+            self.location_customers_count[loc] += 1
+            self.location_average_A[loc] += float(self.answers[key][0])
+            self.location_average_B[loc] += float(self.answers[key][1])
+            self.location_average_C[loc] += float(self.answers[key][2])
+            self.location_average_D[loc] += float(self.answers[key][3])
+            self.location_average_E[loc] += float(self.answers[key][4])
+            self.location_average_F[loc] += float(self.answers[key][5])
+            self.location_average_G[loc] += float(self.answers[key][6])
+            self.location_average_price[loc] += float(self.data_train[key][-1][self.headers['cost']])
+            if self.data_train_truncated[key][-1][self.headers['C_previous']] == 'NA':
+                self.data_train_truncated[key][-1][self.headers['C_previous']] = 0
+            self.location_average_C_previous[loc] += float(self.data_train_truncated[key][-1][self.headers['C_previous']])
+            self.location_G_count[loc][int(self.answers[key][6])] += 1
 
     def evaluate_single_option_split(self, ids, rf_answers, last_quote_answers, real_answers):
         answers_matrix = np.zeros(shape=(7, 5, 5, 5))
@@ -598,7 +203,15 @@ class Analyzer():
 
         for i in range(0, len(rf_answers)):
 
-            #length = len(self.clean_data_cv[ids[i]])
+            nb_errors = 0
+            for j in range(0, 7):
+                if j != self.TESTING_OPTION and last_quote_answers[i, j] != real_answers[i, j]:
+                    nb_errors += 1
+
+            if nb_errors > 0:
+                continue
+
+            #length = len(self.data_train_truncated[str(int(ids[i]))])
             length = 0
 
             rf_answer = ''.join(str(int(x)) for x in rf_answers[i])
@@ -647,12 +260,51 @@ class Analyzer():
 
         return to_train_ids, to_test_ids, to_train_features, to_test_features, to_train_last_quote_answers, to_test_last_quote_answers, to_train_real_answers, to_test_real_answers
 
-    # Returns ids, features for the given data_set as well as last_quote_answers, answers
-    def rf_pre_process(self, data):
+    def filter_train_data(self, ids, features, last_quote_answers, real_answers):
 
-        self.NB_FEATURES = 46
+        tmp_ids = np.copy(ids)
+
+        cnt_interesting = 0
+
+        for i in range(0, len(ids)):
+
+            nb_errors = 0
+            for j in range(0, 6):
+                if last_quote_answers[i, j] != real_answers[i, j]:
+                    nb_errors += 1
+
+            if nb_errors > 0:
+                tmp_ids[i] = -1
+            else:
+                cnt_interesting += 1
+
+        print 'Will keep', cnt_interesting, 'out of', len(ids), 'customers'
+
+        new_ids = np.zeros(shape=(cnt_interesting,))
+        new_features = np.zeros(shape=(cnt_interesting, self.NB_FEATURES))
+
+        new_last_quote_answers = np.zeros(shape=(cnt_interesting, 7))
+        new_real_answers = np.zeros(shape=(cnt_interesting, 7))
+
+        counter = 0
+        for i in range(0, len(ids)):
+            if tmp_ids[i] != -1:
+                new_ids[counter] = ids[i]
+                new_features[counter] = features[i]
+                new_last_quote_answers[counter] = last_quote_answers[i]
+                new_real_answers[counter] = real_answers[i]
+                counter += 1
+
+        print len(new_ids)
+        return new_ids, new_features, new_last_quote_answers, new_real_answers
+
+    # Returns ids, features for the given data_set as well as last_quote_answers, answers
+    def rf_pre_process(self, data, is_test):
+
+        self.NB_FEATURES = 45
         ids = np.zeros(shape=(len(data),))
         features = np.zeros(shape=(len(data), self.NB_FEATURES))
+
         last_quote_answers = np.zeros(shape=(len(data), 7))
         answers = np.zeros(shape=(len(data), 7))
 
@@ -664,28 +316,40 @@ class Analyzer():
             local_features = []
 
             for j in range(0, 7):
-                local_features.append(int(data[key][0][self.headers['A']+j]))
-                local_features.append(int(data[key][-2][self.headers['A']+j]))
                 local_features.append(int(data[key][-1][self.headers['A']+j]))
-
                 last_quote_answers[i, j] = data[key][-1][self.headers['A']+j]
 
-            local_features.append(int(data[key][-1][self.headers['cost']]))
-            local_features.append(int(data[key][-1][self.headers['cost']])-int(data[key][0][self.headers['cost']]))
-            #
+            local_features.append(float(data[key][-1][self.headers['cost']]))
+            local_features.append(float(data[key][-1][self.headers['cost']]) / float(data[key][-2][self.headers['cost']]))
+            local_features.append(float(data[key][-1][self.headers['cost']]) / float(data[key][0][self.headers['cost']]))
+
+            # Max/Min price
+            min_price, max_price = 10000, 0
+            for j in range(0, len(data[key])):
+                if float(data[key][j][self.headers['cost']]) < min_price:
+                    min_price = float(data[key][j][self.headers['cost']])
+
+                if float(data[key][j][self.headers['cost']]) > max_price:
+                    max_price = float(data[key][j][self.headers['cost']])
+
+            local_features.append(float(data[key][-1][self.headers['cost']]) / min_price)
+            local_features.append(max_price / float(data[key][-1][self.headers['cost']]))
+
+            ##
             local_features.append(data[key][-1][self.headers['group_size']])
             local_features.append(data[key][-1][self.headers['homeowner']])
             local_features.append(data[key][-1][self.headers['risk_factor']])
             local_features.append(data[key][-1][self.headers['age_oldest']])
             local_features.append(data[key][-1][self.headers['duration_previous']])
             #
+            local_features.append(data[key][-1][self.headers['day']])
             local_features.append(data[key][-1][self.headers['car_age']])
             local_features.append(len(data[key]))
             local_features.append(data[key][-1][self.headers['age_youngest']])
             local_features.append(data[key][-1][self.headers['married_couple']])
             local_features.append(data[key][-1][self.headers['C_previous']])
             local_features.append(data[key][-1][self.headers['location']])
-
+            #
             local_features.append(CAR_VALUES[data[key][-1][self.headers['car_value']]])
             local_features.append(STATES[data[key][-1][self.headers['state']]])
 
@@ -693,32 +357,38 @@ class Analyzer():
             has_changed_fixed = False
             for k in range(1, len(data[key])):
                 for e, header_key in enumerate(self.headers):
-                    if header_key not in LETTERS:
+                    #if header_key not in LETTERS:
+                    if header_key not in LETTERS and header_key != 'cost' and header_key != 'shopping_pt' and header_key != 'time' and header_key != 'day':
                         if data[key][k][self.headers[header_key]] != data[key][0][self.headers[header_key]]:
                             has_changed_fixed = True
                             break
 
-            # How many changes between 0-1
+            # How many changes between first and second quote
             change_count = 0
             for j in range(0, 7):
                 if data[key][0][self.headers['A']+j] != data[key][1][self.headers['A']+j]:
                     change_count += 1
 
+            # How many changes between first and last quote
             total_change_count = 0
-            for k in range(0, len(data[key])-1):
-                for j in range(0, 7):
-                    if data[key][k][self.headers['A']+j] != data[key][k+1][self.headers['A']+j]:
-                        total_change_count += 1
-
-            # G changes
-            i_change_count = np.zeros(shape=(7,))
             for j in range(0, 7):
-                for k in range(1, len(data[key])):
-                    if data[key][k-1][self.headers['A']+j] != data[key][k][self.headers['A']+j]:
-                        i_change_count[j] += 1
+                if data[key][-1][self.headers['A']+j] != data[key][0][self.headers['A']+j]:
+                    total_change_count += 1
 
+            # Nb Bigger than initial
+            bigger_change_count = 0
             for j in range(0, 7):
-                local_features.append(i_change_count[j])
+                if data[key][-1][self.headers['A']+j] > data[key][0][self.headers['A']+j]:
+                    bigger_change_count += 1
+
+            # Nb Smaller than initial
+            smaller_change_count = 0
+            for j in range(0, 7):
+                if data[key][-1][self.headers['A']+j] < data[key][0][self.headers['A']+j]:
+                    smaller_change_count += 1
+
+            local_features.append(smaller_change_count)
+            local_features.append(bigger_change_count)
 
             local_features.append(has_changed_fixed)
             local_features.append(change_count)
@@ -727,6 +397,77 @@ class Analyzer():
             for j, val in enumerate(local_features):
                 if local_features[j] == 'NA':
                     local_features[j] = 0
+
+            # Different locations
+            location_count = 1
+            location_average_A_value = 0
+            location_average_B_value = 0
+            location_average_C_value = 0
+            location_average_D_value = 0
+            location_average_E_value = 0
+            location_average_F_value = 0
+            location_average_G_value = 0
+            location_average_C_previous_value = 1
+            location_G_count_value = np.zeros(shape=(5,))
+            location_average_price_value = 500
+
+            # This will not be entirely
+            if data[key][0][self.headers['location']] in self.location_customers_count:
+                location_count = self.location_customers_count[data[key][0][self.headers['location']]]
+                if location_count > 5:
+
+                    c_previous = 0
+                    if data[key][-1][self.headers['C_previous']] != 'NA':
+                        c_previous - float(data[key][-1][self.headers['C_previous']])
+
+                    if is_test:
+                        location_average_A_value = self.location_average_A[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_B_value = self.location_average_B[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_C_value = self.location_average_C[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_D_value = self.location_average_D[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_E_value = self.location_average_E[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_F_value = self.location_average_F[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_G_value = self.location_average_G[data[key][0][self.headers['location']]] / float(location_count)
+
+                        location_average_C_previous_value = self.location_average_C_previous[data[key][0][self.headers['location']]] / float(location_count)
+                        location_average_price_value = self.location_average_price[data[key][0][self.headers['location']]] / float(location_count)
+
+                        for k in range(1, 5):
+                            location_G_count_value[k] = self.location_G_count[data[key][0][self.headers['location']]][k] / float(location_count)
+
+                    else:
+                        location_average_A_value = (self.location_average_A[data[key][0][self.headers['location']]] - float(self.answers[key][0])) / (location_count - 1)
+                        location_average_B_value = (self.location_average_B[data[key][0][self.headers['location']]] - float(self.answers[key][1])) / (location_count - 1)
+                        location_average_C_value = (self.location_average_C[data[key][0][self.headers['location']]] - float(self.answers[key][2])) / (location_count - 1)
+                        location_average_D_value = (self.location_average_D[data[key][0][self.headers['location']]] - float(self.answers[key][3])) / (location_count - 1)
+                        location_average_E_value = (self.location_average_E[data[key][0][self.headers['location']]] - float(self.answers[key][4])) / (location_count - 1)
+                        location_average_F_value = (self.location_average_F[data[key][0][self.headers['location']]] - float(self.answers[key][5])) / (location_count - 1)
+                        location_average_G_value = (self.location_average_G[data[key][0][self.headers['location']]] - float(self.answers[key][6])) / (location_count - 1)
+
+                        location_average_C_previous_value = (self.location_average_C_previous[data[key][0][self.headers['location']]] - c_previous) / (location_count - 1)
+                        location_average_price_value = (self.location_average_price[data[key][0][self.headers['location']]] - float(self.data_train[key][-1][self.headers['cost']])) / (location_count - 1)
+
+                        self.location_G_count[data[key][0][self.headers['location']]][int(self.answers[key][6])] -= 1
+                        for k in range(1, 5):
+                            location_G_count_value[k] = self.location_G_count[data[key][0][self.headers['location']]][k] / (location_count - 1)
+                        self.location_G_count[data[key][0][self.headers['location']]][int(self.answers[key][6])] += 1
+
+            local_features.append(location_count)
+            local_features.append(location_average_A_value)
+            local_features.append(location_average_B_value)
+            local_features.append(location_average_C_value)
+            local_features.append(location_average_D_value)
+            local_features.append(location_average_E_value)
+            local_features.append(location_average_F_value)
+            local_features.append(location_average_G_value)
+            local_features.append(location_average_C_previous_value)
+            local_features.append(location_average_price_value)
+
+            for k in range(1, 5):
+                local_features.append((location_G_count_value[k]))
+
+            if i < 40:
+                print local_features
 
             features[i, :] = local_features
 
@@ -743,51 +484,68 @@ class Analyzer():
 
     # Train and predict
     def rf_single_option_run(self, features, real_answers, to_predict_features):
-        clf = RandomForestClassifier(max_features=self.NB_FEATURES, min_samples_leaf=self.NB_FEATURES, n_estimators=self.NB_TREES, n_jobs=self.NB_JOBS)
+        clf = RandomForestClassifier(criterion=self.CRITERION, max_features=self.MAX_FEATURES, min_samples_leaf=self.MIN_SAMPLES_LEAF, n_estimators=self.NB_TREES, n_jobs=self.NB_JOBS)
         clf = clf.fit(features, real_answers)
-        #export_file = tree.export_graphviz(clf.estimators_[0], out_file='tree.dot')
         predicted_answers = clf.predict(to_predict_features)
-        return predicted_answers
+        predicted_proba = clf.predict_proba(to_predict_features)
+        return predicted_answers, predicted_proba
 
     # Full implementation of a simple Random Forests, run on separate options (A, B, C, D, E, F, G)
     def model_rf_separate_options(self):
 
-        timer_start_features = datetime.datetime.now()
-        ids, features, last_quote_answers, real_answers = self.rf_pre_process(self.data_train_truncated)
-        self.logger.info('Features done in {}'.format(datetime.datetime.now() - timer_start_features))
+        ids, features, last_quote_answers, real_answers = self.rf_pre_process(self.data_train_truncated, False)
 
+        self.MAX_FEATURES = self.NB_FEATURES - 10
+        #self.MAX_FEATURES = self.NB_FEATURES
         if self.ANALYSIS:
         # Analysing and tuning
-            total_improvement = 0 # This work only if predicting on one attribute only !
-            for i in range(0, self.NB_CV_SUBSETS):
-                timer_start_split = datetime.datetime.now()
-                to_train_ids, to_test_ids, to_train_features, to_test_features, to_train_last_quote_answers, to_test_last_quote_answers, to_train_real_answers, to_test_real_answers = self.simple_split_cv_data(ids, features, last_quote_answers, real_answers, i, self.NB_CV_SUBSETS)
-                self.logger.info('Split done in {}'.format(datetime.datetime.now() - timer_start_split))
 
-                # Train separately for each option
-                #for i in [0, 1, 2, 3, 4, 5, 6]:
-                for j in [6, ]:
-                    #print 'Predicting option', LETTERS[i]
+            for i_run in range(0, self.NB_RUNS):
+                total_improvement = 0  # This work only if predicting on one attribute only !
+
+                self.MAX_FEATURES = self.NB_FEATURES - 10
+
+                self.logger.info('Running with NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF))
+                print 'Running with NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF)
+
+                for i in range(0, self.NB_CV_SUBSETS):
+                    to_train_ids, to_test_ids, to_train_features, to_test_features, to_train_last_quote_answers, to_test_last_quote_answers, to_train_real_answers, to_test_real_answers = self.simple_split_cv_data(ids, features, last_quote_answers, real_answers, i, self.NB_CV_SUBSETS)
+
+                    self.prepare_location_stats(to_train_ids)
+
+                    #to_train_ids, to_train_features, to_train_last_quote_answers, to_train_real_answers = self.filter_train_data(to_train_ids, to_train_features, to_train_last_quote_answers, to_train_real_answers)
                     rf_answers = np.copy(to_test_last_quote_answers)
+                    # Train separately for each option
+                    #for i in [0, 1, 2, 3, 4, 5, 6]:
+                    for j in [self.TESTING_OPTION, ]:
+                    #for j in self.TESTING_OPTIONS:
+                        #print 'Predicting option', LETTERS[i]
+                        #rf_answers = np.copy(to_test_last_quote_answers)
 
-                    timer_start_rf = datetime.datetime.now()
-                    rf_answers[:, j] = self.rf_single_option_run(to_train_features, to_train_real_answers[:, j], to_test_features)
-                    self.logger.info('RF done in {}'.format(datetime.datetime.now() - timer_start_rf))
+                        predicted_answers, predicted_proba = self.rf_single_option_run(to_train_features, to_train_real_answers[:, j], to_test_features)
 
-                    # Check the prevision quality, and compare to the simple last known quote
-                    timer_start_evaluate = datetime.datetime.now()
-                    total_improvement += self.evaluate_single_option_split(to_test_ids, rf_answers, to_test_last_quote_answers, to_test_real_answers)
-                    self.logger.info('Eval done in {}'.format(datetime.datetime.now() - timer_start_evaluate))
+                        #Replace only when almost sure
+                        for i_id in range(0, len(to_test_ids)):
+                            if max(predicted_proba[i_id]) > 0.0:
+                                rf_answers[i_id, j] = predicted_answers[i_id]
 
-            self.logger.info('IMPROVEMENT {} out of {}. {}%'.format(total_improvement, len(ids), 100 * total_improvement / float(len(ids))))
-            print 'IMPROVEMENT {} out of {}. {}%'.format(total_improvement, len(ids), 100 * total_improvement / float(len(ids)))
+                        # Check the prevision quality, and compare to the simple last known quote
+                        total_improvement += self.evaluate_single_option_split(to_test_ids, rf_answers, to_test_last_quote_answers, to_test_real_answers)
+
+                self.logger.info('IMPROVEMENT {}. {}% PARAMS NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(total_improvement, 100 * total_improvement / float(len(ids)), self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF))
+                print 'IMPROVEMENT {}. {}% PARAMS NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(total_improvement, 100 * total_improvement / float(len(ids)), self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF)
         else:
         # Final prediction
-            to_test_ids, to_test_features, to_test_last_quote_answers, to_test_real_answers = self.rf_pre_process(self.data_test)
+            self.logger.info('Running FINAL with NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF))
+            print 'Running FINAL with NB_TREES {} CRITERION {} MAX_FEATURES {} MAX_DEPTH {} MIN_SAMPLES {}'.format(self.NB_TREES, self.CRITERION, self.MAX_FEATURES, self.MAX_DEPTH, self.MIN_SAMPLES_LEAF)
+
+            to_test_ids, to_test_features, to_test_last_quote_answers, to_test_real_answers = self.rf_pre_process(self.data_test, True)
             rf_answers = np.copy(to_test_last_quote_answers)
-            rf_answers[:, 6] = self.rf_single_option_run(features, real_answers[:, 6], to_test_features)
+            rf_answers[:, self.TESTING_OPTION], probas = self.rf_single_option_run(features, real_answers[:, self.TESTING_OPTION], to_test_features)
 
             self.dump_answers(to_test_ids, rf_answers)
+
+            return to_test_ids, rf_answers
 
     # -------------------------------------------------------- Main --------------------------------------------------------
 
@@ -795,6 +553,8 @@ class Analyzer():
 
         logger = logging.getLogger(__name__)
         logger.setLevel(logging.INFO)
+
+        logger.handlers = []
 
         handler = logging.FileHandler(log_filename)
         handler.setLevel(logging.INFO)
@@ -807,7 +567,8 @@ class Analyzer():
         return logger
 
     def run_analysis(self):
-        self.logger = self.setup_logger('Analysis.log')
+        if self.logger is None:
+            self.logger = self.setup_logger('Analysis.log')
         start_time = datetime.datetime.now()
-        self.model_rf_separate_options()
+        return self.model_rf_separate_options()
         self.logger.info('All done in {}'.format(datetime.datetime.now() - start_time))
